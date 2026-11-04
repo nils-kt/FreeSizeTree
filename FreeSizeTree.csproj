@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <AssemblyName>FreeSizeTree</AssemblyName>
+    <RootNamespace>FreeSizeTree</RootNamespace>
+    <Product>FreeSizeTree</Product>
+    <Version>2.0.0</Version>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- WebView2 ships a WPF assembly we don't use; its WindowsBase reference is harmless -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+    <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The UI is served from embedded resources via https://app.local/ -->
+    <EmbeddedResource Include="www\*" LogicalName="www.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+</Project>
