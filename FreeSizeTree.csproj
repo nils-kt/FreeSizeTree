@@ -10,7 +10,8 @@
     <AssemblyName>FreeSizeTree</AssemblyName>
     <RootNamespace>FreeSizeTree</RootNamespace>
     <Product>FreeSizeTree</Product>
-    <Version>2.0.0</Version>
+    <Version>2.0.1</Version>
+    <ApplicationIcon>FreeSizeTree.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- WebView2 ships a WPF assembly we don't use; its WindowsBase reference is harmless -->
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
