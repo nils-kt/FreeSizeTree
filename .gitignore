@@ -4,3 +4,5 @@ dist/
 *.user
 .vs/
 artifacts/
+ui/node_modules/
+ui/dist/

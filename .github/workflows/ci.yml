@@ -20,6 +20,13 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # Die Oberfläche (ui/, React + Vite) wird beim dotnet build mitgebaut.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
       - name: Build
         run: dotnet build -c Release
 

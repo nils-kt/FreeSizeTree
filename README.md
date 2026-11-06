@@ -6,7 +6,7 @@
 
 **Speicherplatz-Analyse für Windows: Finde heraus, was deine Festplatte füllt, und räum in Minuten auf.**
 
-Sunburst & Treemap, Aufräum-Tipps mit Ein-Klick-Bereinigung, alle Spiele aus Steam, Epic, EA, Rockstar, Xbox & Co., installierte Programme und Duplikate – in einer schnellen, modernen Oberfläche.
+Sunburst & Treemap, Aufräum-Tipps mit automatischer Bereinigung, alle Spiele aus Steam, Epic, EA, Rockstar, Xbox & Co., installierte Programme und Duplikate – in einer schnellen Oberfläche im Stil von Windows 11, hell oder dunkel passend zu deinem System.
 
 [**⬇ Download (neueste Version)**](../../releases/latest) · [Funktionen](#funktionen) · [Installation](#installation) · [Bauen](#selbst-bauen) · [Mitmachen](#mitmachen)
 
@@ -30,7 +30,7 @@ Sunburst & Treemap, Aufräum-Tipps mit Ein-Klick-Bereinigung, alle Spiele aus St
 
 Laufwerk wählen, auf **Scannen** klicken – FreeSizeTree liest alle Ordner mit bis zu 16 Threads parallel ein. Über eine Million Dateien sind meist in unter einer Minute erfasst. Danach zeigt die Übersicht sofort, wie viel Speicher sich freigeben lässt, aufgeteilt in *Caches & Temp*, *Build-Ordner*, *Mit Windows-Tool* und *Prüfen*.
 
-<img src="docs/images/scan.png" alt="Laufender Scan mit Fortschrittsring, Dateien, Ordnern, Größe und aktuellem Pfad">
+<img src="docs/images/scan.png" alt="Laufender Scan mit Fortschrittsbalken, Dateien, Ordnern, Größe und aktuellem Pfad">
 
 ### Explorer: Sunburst & Treemap
 
@@ -56,19 +56,18 @@ FreeSizeTree kennt die typischen Platzfresser und sagt dir bei jedem Fund, **ob*
 
 <img src="docs/images/cleanup.png" alt="Aufräum-Seite mit Kacheln je Einschätzung und Fundstellen samt Empfehlung">
 
+**Automatische Bereinigung**
+
+- leert Papierkorb, Temp-Ordner und reine Caches – jeder Bereich lässt sich per Häkchen abwählen
+- Build-Ordner (`node_modules`, `target`, `.next` …) nur mit ausdrücklichem Häkchen
+- während der Bereinigung zeigt ein Dialog den Fortschritt; er lässt sich nicht wegklicken, nur **abbrechen** (stoppt nach der aktuellen Datei)
+- danach sind Übersicht und freier Speicher sofort aktualisiert
+- gerade benutzte Dateien werden übersprungen, Downloads, Spiele und Projektdateien bleiben unberührt
+
 <table>
 <tr>
-<td width="52%"><img src="docs/images/quick-clean.png" alt="Dialog der Schnellbereinigung mit Liste der Caches und optionalen Build-Ordnern"></td>
-<td>
-
-**Schnellbereinigung**
-
-- leert Papierkorb, Temp-Ordner und reine Caches
-- Build-Ordner (`node_modules`, `target`, `.next` …) nur mit ausdrücklichem Häkchen
-- gerade benutzte Dateien werden übersprungen
-- Downloads, Spiele und Projektdateien bleiben unberührt
-
-</td>
+<td width="50%"><img src="docs/images/quick-clean.png" alt="Auswahl der automatischen Bereinigung mit Häkchen für Caches und optionale Build-Ordner"></td>
+<td width="50%"><img src="docs/images/cleaning.png" alt="Fortschrittsdialog der laufenden Bereinigung mit Abbrechen-Knopf"></td>
 </tr>
 </table>
 
@@ -112,7 +111,7 @@ Alle installierten Programme mit Icon, Version, Installationsdatum und **gemesse
 
 Die Oberfläche nutzt die [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Unter Windows 11 ist sie vorinstalliert.
 
-> **Tipp:** Über **Admin** unten links startet FreeSizeTree mit Administratorrechten neu. Dann werden auch geschützte Systemordner und die Profile anderer Benutzer mitgezählt.
+> **Tipp:** Über **Neu starten** unten links startet FreeSizeTree mit Administratorrechten neu. Dann werden auch geschützte Systemordner und die Profile anderer Benutzer mitgezählt.
 
 ### Kommandozeile
 
@@ -130,7 +129,7 @@ Die Oberfläche nutzt die [Microsoft Edge WebView2 Runtime](https://developer.mi
 
 FreeSizeTree löscht **nie etwas ohne Bestätigung**. Jeder Dialog zeigt Pfad und Größe. Der Fokus liegt dort immer auf „Abbrechen“, und Bestätigungen werden erst nach einer kurzen Verzögerung angenommen – ein versehentlicher Doppelklick oder Enter löscht also nichts.
 
-- Die **Schnellbereinigung** leert Papierkorb, Temp-Ordner und reine Cache-Ordner. Build-Ordner kommen nur per Häkchen dazu.
+- Die **automatische Bereinigung** leert Papierkorb, Temp-Ordner und reine Cache-Ordner. Build-Ordner kommen nur per Häkchen dazu. Eine laufende Bereinigung lässt sich jederzeit abbrechen.
 - **Mit Windows-Tool**-Einträge öffnen die Windows-Speichereinstellungen, statt Systemdateien direkt anzufassen.
 - **Nicht löschen**-Einträge haben keinen Lösch-Knopf.
 - In System- und Programmordnern erscheint beim Löschen eine zusätzliche Warnung.
@@ -145,13 +144,15 @@ FreeSizeTree löscht **nie etwas ohne Bestätigung**. Jeder Dialog zeigt Pfad un
 
 ## Selbst bauen
 
-Voraussetzungen: Windows 10/11 und das [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+Voraussetzungen: Windows 10/11, das [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) und [Node.js](https://nodejs.org/) 22 oder neuer.
 
 ```bash
 git clone https://github.com/nils-kt/FreeSizeTree.git && cd FreeSizeTree
 dotnet build
 dotnet run
 ```
+
+`dotnet build` baut die Oberfläche in [`ui/`](ui) automatisch mit (`npm ci` beim ersten Mal, danach `npm run build`, sobald sich dort etwas ändert) und bettet sie in die EXE ein.
 
 Eine einzelne, eigenständige EXE baust du so:
 
@@ -196,8 +197,12 @@ Dupes.cs            Duplikatsuche
 DemoData.cs         Fiktiver Demo-PC für --demo und die README-Bilder
 DocRenderer.cs      Rendert die README-Bilder (--render-docs)
 Report.cs           Textbericht (--report)
-Native.cs           Windows-APIs (Papierkorb, Titelleiste)
-www/                Oberfläche: index.html, app.css, app.js (ohne Framework)
+Native.cs           Windows-APIs (Papierkorb, Titelleiste, Hell/Dunkel)
+ui/                 Oberfläche: React + Fluent UI (Windows-11-Design), gebaut mit Vite
+  src/pages/        Eine Datei pro Seite (Übersicht, Explorer, Aufräumen …)
+  src/components/   Diagramme, Bereinigungsdialog, Menüs und Dialoge
+  src/actions.tsx   Alle Aktionen und Live-Events der App
+  src/docs.ts       Zustände für --render-docs
 ```
 
 **So funktioniert der Scan:** Mehrere Threads arbeiten eine gemeinsame Ordner-Warteschlange ab, jeder Ordner wird genau einmal gelesen. Kleine Dateien werden nur gezählt; Dateien ab 1 MB werden einzeln gemerkt (für Treemap, große Dateien und Duplikate). Danach werden die Größen von unten nach oben aufsummiert. Junctions und symbolische Links werden nicht verfolgt, damit nichts doppelt zählt; OneDrive-Dateien, die nur in der Cloud liegen, zählen mit 0 Byte.

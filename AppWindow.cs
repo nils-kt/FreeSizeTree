@@ -10,20 +10,25 @@ sealed record StartOptions(string? ScanPath, string? Page, bool Dev, bool Demo =
 /// <summary>Native window hosting the HTML user interface.</summary>
 sealed class AppWindow : Form
 {
-    public static readonly Color Background = Color.FromArgb(10, 12, 17);
+    // Windows 11 window backgrounds (Mica fallback colors)
+    static readonly Color DarkBackground = Color.FromArgb(32, 32, 32);
+    static readonly Color LightBackground = Color.FromArgb(243, 243, 243);
     const string Origin = "https://app.local/";
 
-    readonly WebView2 web = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Background };
+    readonly WebView2 web = new() { Dock = DockStyle.Fill };
     readonly StartOptions options;
     readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte[]?> iconCache = new(StringComparer.OrdinalIgnoreCase);
     Bridge? bridge;
+    bool dark;
 
     public AppWindow(StartOptions options)
     {
         this.options = options;
         Text = "FreeSizeTree";
-        BackColor = Background;
         StartPosition = FormStartPosition.CenterScreen;
+        ApplyTheme();
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        FormClosed += (_, _) => Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         var area = Screen.FromPoint(Cursor.Position).WorkingArea;
         Size = new Size(Math.Min(LogicalToDeviceUnits(1480), area.Width - 40), Math.Min(LogicalToDeviceUnits(940), area.Height - 40));
         if (options.RenderDocs != null) ClientSize = new Size(LogicalToDeviceUnits(1440), LogicalToDeviceUnits(880));
@@ -37,7 +42,24 @@ sealed class AppWindow : Form
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        Native.StyleTitleBar(Handle, Background);
+        ApplyTheme();
+    }
+
+    void OnUserPreferenceChanged(object? sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category == Microsoft.Win32.UserPreferenceCategory.General && IsHandleCreated) BeginInvoke(ApplyTheme);
+    }
+
+    /// <summary>Follows the Windows app theme; README images are always rendered dark.</summary>
+    void ApplyTheme()
+    {
+        dark = options.RenderDocs != null || Native.AppsUseDarkTheme();
+        var bg = dark ? DarkBackground : LightBackground;
+        BackColor = bg;
+        web.DefaultBackgroundColor = bg;
+        if (IsHandleCreated) Native.StyleTitleBar(Handle, dark, bg);
+        if (web.CoreWebView2 is { } core)
+            core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
     }
 
     async Task InitAsync()
@@ -64,6 +86,7 @@ sealed class AppWindow : Form
         }
 
         var core = web.CoreWebView2;
+        ApplyTheme();
         core.Settings.AreDevToolsEnabled = options.Dev;
         core.Settings.AreDefaultContextMenusEnabled = options.Dev;
         core.Settings.IsStatusBarEnabled = false;
@@ -147,6 +170,7 @@ sealed class AppWindow : Form
                     ".css" => "text/css; charset=utf-8",
                     ".js" => "text/javascript; charset=utf-8",
                     ".svg" => "image/svg+xml",
+                    ".woff2" => "font/woff2",
                     _ => type,
                 };
             }

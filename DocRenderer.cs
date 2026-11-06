@@ -3,31 +3,25 @@ using Microsoft.Web.WebView2.Core;
 namespace FreeSizeTree;
 
 /// <summary>
-/// Renders the README images (--render-docs): opens each page of the demo data through the
-/// page's own functions and saves a PNG of the web view. No mouse or keyboard input is used.
+/// Renders the README images (--render-docs): puts the demo app into each state through the
+/// window.fst hook (ui/src/docs.ts) and saves a PNG of the web view. No mouse or keyboard input is used.
 /// </summary>
 static class DocRenderer
 {
-    const string CloseDialog = "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));";
-
     static readonly (string file, string script, int wait)[] Shots =
     [
-        ("overview.png", "go('overview')", 1900),
-        ("scan.png", """
-            S.scanning = true; S.fullScan = true; S.scanPath = 'C:\\';
-            S.progress = { files: 1284311, dirs: 203118, bytes: 512e9, pct: 0.61, elapsed: 23.4,
-                           current: 'C:\\Users\\alex\\Projects\\web-shop\\node_modules\\@babel\\core\\lib' };
-            updateScanbar(); go('overview');
-            """, 1100),
-        ("explorer.png", "S.scanning = false; S.fullScan = false; S.progress = null; updateScanbar(); S.chartMode = 'sunburst'; S.nodeId = S.summary.rootId; go('explorer')", 1500),
-        ("treemap.png", "S.chartMode = 'treemap'; render()", 1300),
-        ("cleanup.png", "S.hints = null; go('cleanup')", 1500),
-        ("quick-clean.png", "quickClean()", 1000),
-        ("games.png", CloseDialog + " go('games')", 1800),
-        ("apps.png", "go('apps')", 1300),
-        ("files.png", "go('files')", 1300),
-        ("dupes.png", "api('dupes', { minSize: S.dupeMin }).then(r => { S.dupes = r; go('dupes'); })", 1400),
-        ("types.png", "go('types')", 1500),
+        ("overview.png", "fst.go('overview')", 1500),
+        ("scan.png", "fst.scan()", 1000),
+        ("explorer.png", "fst.reset(); fst.chart('sunburst')", 1500),
+        ("treemap.png", "fst.chart('treemap')", 1300),
+        ("cleanup.png", "fst.go('cleanup')", 1300),
+        ("quick-clean.png", "fst.autoClean()", 1000),
+        ("cleaning.png", "fst.reset(); fst.cleaning()", 1000),
+        ("games.png", "fst.reset(); fst.go('games')", 1800),
+        ("apps.png", "fst.go('apps')", 1300),
+        ("files.png", "fst.go('files')", 1300),
+        ("dupes.png", "fst.dupes()", 1400),
+        ("types.png", "fst.go('types')", 1500),
     ];
 
     public static async Task RunAsync(CoreWebView2 web, string folder)
@@ -36,6 +30,8 @@ static class DocRenderer
         await Task.Delay(2000); // boot, demo games and fonts
         // The real mouse may rest over the window: no hover states in the images.
         await web.ExecuteScriptAsync("document.documentElement.style.pointerEvents = 'none'");
+        if (await web.ExecuteScriptAsync("typeof fst") != "\"object\"")
+            throw new InvalidOperationException("Docs hook (window.fst) not available.");
         foreach (var (file, script, wait) in Shots)
         {
             await web.ExecuteScriptAsync(script);

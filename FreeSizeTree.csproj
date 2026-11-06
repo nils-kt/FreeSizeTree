@@ -10,21 +10,42 @@
     <AssemblyName>FreeSizeTree</AssemblyName>
     <RootNamespace>FreeSizeTree</RootNamespace>
     <Product>FreeSizeTree</Product>
-    <Version>2.0.1</Version>
+    <Version>2.1.0</Version>
     <ApplicationIcon>FreeSizeTree.ico</ApplicationIcon>
     <InvariantGlobalization>false</InvariantGlobalization>
     <!-- WebView2 ships a WPF assembly we don't use; its WindowsBase reference is harmless -->
     <NoWarn>$(NoWarn);MSB3277</NoWarn>
     <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
+    <DefaultItemExcludes>$(DefaultItemExcludes);ui\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
+  <!--
+    The user interface is a React app in ui\ (Vite + Fluent UI). It is built with npm before
+    compiling and embedded as resources, served via https://app.local/.
+  -->
   <ItemGroup>
-    <!-- The UI is served from embedded resources via https://app.local/ -->
-    <EmbeddedResource Include="www\*" LogicalName="www.%(Filename)%(Extension)" />
+    <UiSource Include="ui\src\**\*;ui\index.html;ui\package.json;ui\vite.config.ts" />
   </ItemGroup>
+
+  <Target Name="NpmInstall" Condition="!Exists('ui\node_modules')">
+    <Exec Command="npm ci" WorkingDirectory="ui" />
+  </Target>
+
+  <Target Name="BuildUi" DependsOnTargets="NpmInstall" BeforeTargets="BeforeBuild"
+          Inputs="@(UiSource)" Outputs="ui\dist\index.html">
+    <Exec Command="npm run build" WorkingDirectory="ui" />
+  </Target>
+
+  <Target Name="EmbedUi" AfterTargets="BuildUi" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <_UiFile Include="ui\dist\*" />
+      <EmbeddedResource Include="@(_UiFile)" LogicalName="www.%(_UiFile.Filename)%(_UiFile.Extension)" />
+    </ItemGroup>
+    <Error Condition="!Exists('ui\dist\index.html')" Text="ui\dist fehlt – 'npm run build' im Ordner ui ausführen." />
+  </Target>
 
 </Project>

@@ -25,21 +25,29 @@ static class Native
         return SHQueryRecycleBin(null, ref info) == 0 ? (info.i64Size, info.i64NumItems) : (0, 0);
     }
 
-    /// <summary>Empties all recycle bins. Windows shows its own confirmation dialog.</summary>
-    public static bool EmptyRecycleBin(IntPtr owner) => SHEmptyRecycleBin(owner, null, 0) == 0;
+    /// <summary>Empties all recycle bins. Unless <paramref name="silent"/>, Windows shows its own confirmation dialog.</summary>
+    public static bool EmptyRecycleBin(IntPtr owner, bool silent = false) =>
+        SHEmptyRecycleBin(owner, null, silent ? 0x7u : 0u) == 0; // SHERB_NOCONFIRMATION | NOPROGRESSUI | NOSOUND
 
     [DllImport("dwmapi.dll")]
     static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
-    /// <summary>Dark title bar whose caption color blends into the app background (Windows 11).</summary>
-    public static void StyleTitleBar(IntPtr hwnd, Color caption)
+    /// <summary>Title bar in the app theme whose caption color blends into the window background (Windows 11).</summary>
+    public static void StyleTitleBar(IntPtr hwnd, bool dark, Color caption)
     {
-        int on = 1;
+        int on = dark ? 1 : 0;
         DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int));          // DWMWA_USE_IMMERSIVE_DARK_MODE
         int color = caption.R | caption.G << 8 | caption.B << 16;
         DwmSetWindowAttribute(hwnd, 35, ref color, sizeof(int));       // DWMWA_CAPTION_COLOR
-        int text = 0xE0 | 0xE4 << 8 | 0xEC << 16;
+        int text = dark ? 0xFFFFFF : 0x1A1A1A;
         DwmSetWindowAttribute(hwnd, 36, ref text, sizeof(int));        // DWMWA_TEXT_COLOR
+    }
+
+    /// <summary>Whether Windows apps use the dark theme (Settings › Personalization › Colors).</summary>
+    public static bool AppsUseDarkTheme()
+    {
+        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        return key?.GetValue("AppsUseLightTheme") is int light && light == 0;
     }
 }
 

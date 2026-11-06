@@ -30,9 +30,9 @@ sealed class Bridge
     Dictionary<string, ExtStat> extensions = [];
     List<Hint> hints = [];
     Scanner? scanner;
-    CancellationTokenSource? scanCts, sizeCts, dupeCts;
+    CancellationTokenSource? scanCts, sizeCts, dupeCts, cleanCts;
     long estimate;
-    bool busy;
+    bool busy, cleaning;
     (long errors, long cloud, double seconds, bool cancelled) lastScan;
     List<Game>? games;
     List<UninstallEntry>? apps;
@@ -41,9 +41,12 @@ sealed class Bridge
     // Everything that changes or opens something on the real system is refused in demo mode.
     static readonly HashSet<string> NotInDemo =
     [
-        "pickFolder", "scan", "cancel", "clean", "delete", "rescan", "reveal", "open", "openUrl", "copy",
+        "pickFolder", "scan", "cancel", "clean", "autoClean", "delete", "rescan", "reveal", "open", "openUrl", "copy",
         "emptyRecycle", "uninstallGame", "uninstallApp", "elevate",
     ];
+
+    // Hint actions that the cleanup dialog may run without further questions.
+    static readonly HintAction[] AutoActions = [HintAction.EmptyRecycleBin, HintAction.CleanContents, HintAction.DeleteFolder, HintAction.DeleteFile];
 
     public Bridge(AppWindow win, CoreWebView2 web, StartOptions options)
     {
@@ -68,6 +71,7 @@ sealed class Bridge
         scanCts?.Cancel();
         sizeCts?.Cancel();
         dupeCts?.Cancel();
+        cleanCts?.Cancel();
     }
 
     // ================================================================ plumbing
@@ -110,6 +114,17 @@ sealed class Bridge
     static bool Flag(JsonElement a, string k) =>
         a.ValueKind == JsonValueKind.Object && a.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
 
+    static List<string> Strs(JsonElement a, string k) =>
+        a.ValueKind == JsonValueKind.Object && a.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Array
+            ? v.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToList()
+            : [];
+
+    void EnsureIdle()
+    {
+        if (busy) throw new InvalidOperationException("Bitte warten, bis der Scan fertig ist.");
+        if (cleaning) throw new InvalidOperationException("Bitte warten, bis die Bereinigung fertig ist.");
+    }
+
     static Task<object?> Done(object? o) => Task.FromResult(o);
 
     int Id(object o)
@@ -144,6 +159,8 @@ sealed class Bridge
         "files" => Done(Files()),
         "hints" => Done(HintList()),
         "clean" => Clean(Str(a, "path")),
+        "autoClean" => AutoClean(Strs(a, "paths")),
+        "cancelClean" => Done(CancelClean()),
         "delete" => Delete(Num(a, "id"), Str(a, "mode")),
         "rescan" => Rescan(Num(a, "id")),
         "reveal" => Done(Reveal(Str(a, "path"))),
@@ -173,7 +190,8 @@ sealed class Bridge
     object Init() => new
     {
         admin = demo != null || IsAdmin(),
-        version = "2.0",
+        version = typeof(Bridge).Assembly.GetName().Version?.ToString(3),
+        demo = demo != null,
         drives = demo?.Drives ?? Drives(),
         recycle = demo?.Recycle ?? RecycleInfo(),
         startPage = options.Page,
@@ -270,6 +288,7 @@ sealed class Bridge
 
     object StartScan(string path)
     {
+        if (cleaning) throw new InvalidOperationException("Bitte warten, bis die Bereinigung fertig ist.");
         if (busy) throw new InvalidOperationException("Es läuft bereits ein Scan.");
         if (!Directory.Exists(path)) throw new InvalidOperationException("Ordner nicht gefunden: " + path);
         _ = FullScan(path);
@@ -345,7 +364,7 @@ sealed class Bridge
 
     async Task<object?> Rescan(long id)
     {
-        if (busy) throw new InvalidOperationException("Es läuft bereits ein Scan.");
+        EnsureIdle();
         var d = (DirNode)Obj(id);
         if (d == root)
         {
@@ -556,7 +575,7 @@ sealed class Bridge
 
     async Task<object?> Clean(string path)
     {
-        if (busy) throw new InvalidOperationException("Bitte warten, bis der Scan fertig ist.");
+        EnsureIdle();
         var h = hints.FirstOrDefault(x => x.Path.Equals(path, StringComparison.OrdinalIgnoreCase))
                 ?? throw new InvalidOperationException("Tipp nicht mehr aktuell – bitte neu laden.");
         long before = root?.Size ?? 0;
@@ -592,6 +611,111 @@ sealed class Bridge
         return new { freed };
     }
 
+    /// <summary>
+    /// Runs the selected hints one after another in the background. The page shows a blocking
+    /// progress dialog fed by "cleanProgress" events; "cancelClean" stops after the current file.
+    /// </summary>
+    async Task<object?> AutoClean(List<string> paths)
+    {
+        EnsureIdle();
+        var list = paths
+            .Select(p => hints.FirstOrDefault(h => h.Path.Equals(p, StringComparison.OrdinalIgnoreCase)))
+            .OfType<Hint>()
+            .Where(h => AutoActions.Contains(h.Action))
+            .ToList();
+        if (list.Count == 0) throw new InvalidOperationException("Diese Empfehlungen sind nicht mehr aktuell – bitte neu laden.");
+
+        cleaning = true;
+        var cts = cleanCts = new CancellationTokenSource();
+        var p = new CleanProgress();
+        var errors = new List<string>();
+        long planned = list.Sum(h => h.Size), done = 0;
+        int index = 0;
+        var current = list[0];
+
+        void Report() => Emit("cleanProgress", new
+        {
+            index, count = list.Count, category = current.Category, path = p.Current ?? current.Path,
+            planned, done, itemSize = current.Size,
+            freed = Interlocked.Read(ref p.Freed), files = Interlocked.Read(ref p.Files),
+            cancelling = cts.IsCancellationRequested,
+        });
+
+        using var tick = new System.Windows.Forms.Timer { Interval = 120 };
+        tick.Tick += (_, _) => Report();
+        tick.Start();
+        try
+        {
+            for (; index < list.Count && !cts.IsCancellationRequested; index++)
+            {
+                current = list[index];
+                p.Current = null;
+                Report();
+                try
+                {
+                    switch (current.Action)
+                    {
+                        case HintAction.EmptyRecycleBin:
+                            var (binSize, _) = Native.QueryRecycleBin();
+                            if (Native.EmptyRecycleBin(win.Handle, silent: true)) Interlocked.Add(ref p.Freed, binSize);
+                            break;
+                        case HintAction.CleanContents when current.Item is DirNode d:
+                            await Task.Run(() => Cleaner.DeleteContents(d.FullPath, p, cts.Token));
+                            break;
+                        case HintAction.DeleteFolder when current.Item is DirNode d:
+                            await Task.Run(() => Cleaner.DeleteTree(d.FullPath, p, cts.Token));
+                            break;
+                        case HintAction.DeleteFile when current.Item is FileEntry f:
+                            await Task.Run(() => Cleaner.DeleteFile(new FileInfo(f.FullPath), p));
+                            break;
+                    }
+                    await Refresh(current.Item);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"{current.Category}: {ex.Message}");
+                }
+                done += current.Size;
+            }
+        }
+        finally
+        {
+            tick.Stop();
+            cleaning = false;
+        }
+        index = Math.Min(index, list.Count - 1);
+        Report();
+        Changed();
+        return new
+        {
+            freed = Interlocked.Read(ref p.Freed),
+            files = Interlocked.Read(ref p.Files),
+            cancelled = cts.IsCancellationRequested,
+            errors,
+            recycle = RecycleInfo(),
+        };
+    }
+
+    object? CancelClean()
+    {
+        cleanCts?.Cancel();
+        return null;
+    }
+
+    /// <summary>Brings a cleaned folder or file of the tree up to date without a visible scan.</summary>
+    async Task Refresh(object item)
+    {
+        if (root == null) return;
+        if (item is DirNode d && d.IsWithin(root))
+        {
+            string path = d.FullPath;
+            if (!Directory.Exists(path)) TreeOps.RemoveDir(d);
+            else if (await Task.Run(() => new Scanner().Scan(path, CancellationToken.None)) is { } fresh) TreeOps.Replace(d, fresh);
+        }
+        else if (item is FileEntry f && !File.Exists(f.FullPath) && f.Parent.IsWithin(root))
+            TreeOps.RemoveFile(f);
+    }
+
     static void RunElevated(string exe, string args)
     {
         try
@@ -606,7 +730,7 @@ sealed class Bridge
 
     async Task<object?> Delete(long id, string mode)
     {
-        if (busy) throw new InvalidOperationException("Bitte warten, bis der Scan fertig ist.");
+        EnsureIdle();
         var item = Obj(id);
         if (item == root) throw new InvalidOperationException("Der gescannte Hauptordner kann nicht gelöscht werden.");
         string path = Items.PathOf(item);
